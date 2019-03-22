@@ -33,15 +33,6 @@ def parse_args(parser, argv=None):
   return parser.parse_args(extract_args(argv))
 
 
-# I wonder if there's a better way to do this?
-def delete_object(obj):
-  """ Delete a specified blender object """
-  for o in bpy.data.objects:
-    o.select = False
-  obj.select = True
-  bpy.ops.object.delete()
-
-
 def get_camera_coords(cam, pos):
   """
   For a specified point, get both the 3D coordinates and 2D pixel-space
@@ -69,9 +60,14 @@ def set_layer(obj, layer_idx):
   """ Move an object to a particular layer """
   # Set the target layer to True first because an object must always be on
   # at least one layer.
-  obj.layers[layer_idx] = True
-  for i in range(len(obj.layers)):
-    obj.layers[i] = (i == layer_idx)
+  layer_name = "Collection {}".format(layer_idx) if layer_idx > 0 else "Collection"
+  if layer_name not in [c.name for c in bpy.data.collections]:
+    coll = bpy.data.collections.new(layer_name)
+    bpy.context.scene.collection.children.link(coll)
+  else:
+    coll = bpy.data.collections[layer_name]
+  obj.users_collection[0].objects.unlink(obj)
+  coll.objects.link(obj)
 
 
 def add_object(object_dir, name, scale, loc, theta=0):
@@ -100,7 +96,7 @@ def add_object(object_dir, name, scale, loc, theta=0):
 
   # Set the new object as active, then rotate, scale, and translate it
   x, y = loc
-  bpy.context.scene.objects.active = bpy.data.objects[new_name]
+  bpy.context.view_layer.objects.active = bpy.data.objects[new_name]
   bpy.context.object.rotation_euler[2] = theta
   bpy.ops.transform.resize(value=(scale, scale, scale))
   bpy.ops.transform.translate(value=(x, y, scale))

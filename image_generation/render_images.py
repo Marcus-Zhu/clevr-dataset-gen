@@ -238,9 +238,10 @@ def render_scene(args,
     if bpy.app.version < (2, 78, 0):
       bpy.context.user_preferences.system.compute_device_type = 'CUDA'
       bpy.context.user_preferences.system.compute_device = 'CUDA_0'
+    elif bpy.app.version < (2, 80, 0):
+      bpy.context.user_preferences.addons['cycles'].preferences.compute_device_type = 'CUDA'
     else:
-      cycles_prefs = bpy.context.user_preferences.addons['cycles'].preferences
-      cycles_prefs.compute_device_type = 'CUDA'
+      bpy.context.preferences.addons['cycles'].preferences.compute_device_type = 'CUDA'
 
   # Some CYCLES-specific stuff
   bpy.data.worlds['World'].cycles.sample_as_light = True
@@ -261,7 +262,8 @@ def render_scene(args,
   }
 
   # Put a plane on the ground so we can compute cardinal directions
-  bpy.ops.mesh.primitive_plane_add(radius=5)
+  # keyword on Win/Mac is 'radius', on Linux is 'size'
+  bpy.ops.mesh.primitive_plane_add(size=5)
   plane = bpy.context.object
 
   def rand(L):
@@ -276,16 +278,16 @@ def render_scene(args,
   # them in the scene structure
   camera = bpy.data.objects['Camera']
   plane_normal = plane.data.vertices[0].normal
-  cam_behind = camera.matrix_world.to_quaternion() * Vector((0, 0, -1))
-  cam_left = camera.matrix_world.to_quaternion() * Vector((-1, 0, 0))
-  cam_up = camera.matrix_world.to_quaternion() * Vector((0, 1, 0))
+  cam_behind = camera.matrix_world.to_quaternion() @ Vector((0, 0, -1))
+  cam_left = camera.matrix_world.to_quaternion() @ Vector((-1, 0, 0))
+  cam_up = camera.matrix_world.to_quaternion() @ Vector((0, 1, 0))
   plane_behind = (cam_behind - cam_behind.project(plane_normal)).normalized()
   plane_left = (cam_left - cam_left.project(plane_normal)).normalized()
   plane_up = cam_up.project(plane_normal).normalized()
 
   # Delete the plane; we only used it for normals anyway. The base scene file
   # contains the actual ground plane.
-  utils.delete_object(plane)
+  bpy.data.objects.remove(plane,do_unlink=True)
 
   # Save all six axis-aligned directions in the scene struct
   scene_struct['directions']['behind'] = tuple(plane_behind)
@@ -364,7 +366,7 @@ def add_random_objects(scene_struct, num_objects, args, camera):
       num_tries += 1
       if num_tries > args.max_retries:
         for obj in blender_objects:
-          utils.delete_object(obj)
+          bpy.data.objects.remove(obj,do_unlink=True)
         return add_random_objects(scene_struct, num_objects, args, camera)
       x = random.uniform(-3, 3)
       y = random.uniform(-3, 3)
@@ -439,7 +441,7 @@ def add_random_objects(scene_struct, num_objects, args, camera):
     # objects from the scene and place them all again.
     print('Some objects are occluded; replacing objects')
     for obj in blender_objects:
-      utils.delete_object(obj)
+      bpy.data.objects.remove(obj,do_unlink=True)
     return add_random_objects(scene_struct, num_objects, args, camera)
 
   return objects, blender_objects
@@ -514,7 +516,7 @@ def render_shadeless(blender_objects, path='flat.png'):
 
   # Override some render settings to have flat shading
   render_args.filepath = path
-  render_args.engine = 'BLENDER_RENDER'
+  render_args.engine = 'BLENDER_WORKBENCH'
   render_args.use_antialiasing = False
 
   # Move the lights and ground to layer 2 so they don't render
@@ -535,8 +537,8 @@ def render_shadeless(blender_objects, path='flat.png'):
       r, g, b = [random.random() for _ in range(3)]
       if (r, g, b) not in object_colors: break
     object_colors.add((r, g, b))
-    mat.diffuse_color = [r, g, b]
-    mat.use_shadeless = True
+    mat.diffuse_color = [r, g, b, 1]
+    bpy.context.scene.display.shading.light = 'FLAT'
     obj.data.materials[0] = mat
 
   # Render the scene
